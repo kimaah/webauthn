@@ -112,7 +112,7 @@ func FullyQualifiedOrigin(rawOrigin string) (fqOrigin string, err error) {
 // TopOriginDefaultVerificationMode as it's expected this value is updated by the config validation process.
 //
 //nolint:gocyclo
-func (c *CollectedClientData) Verify(storedChallenge string, ceremony CeremonyType, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode) (err error) {
+func (c *CollectedClientData) Verify(storedChallenge string, ceremony CeremonyType, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode, allowCrossOrigin bool) (err error) {
 	// Registration Step 3. Verify that the value of C.type is webauthn.create.
 
 	// Assertion Step 7. Verify that the value of C.type is the string webauthn.get.
@@ -143,35 +143,39 @@ func (c *CollectedClientData) Verify(storedChallenge string, ceremony CeremonyTy
 			WithInfo(fmt.Sprintf("Expected Values: %s, Received: %s", rpOrigins, c.Origin))
 	}
 
-	if rpTopOriginsVerify != TopOriginIgnoreVerificationMode {
-		switch len(c.TopOrigin) {
-		case 0:
-			break
+	if !allowCrossOrigin && c.CrossOrigin {
+		return ErrVerification.
+			WithDetails("Error validating cross origin flag").
+			WithInfo("The cross origin flag is invalid due to the configuration.")
+	}
+
+	switch len(c.TopOrigin) {
+	case 0:
+		break
+	default:
+		if !c.CrossOrigin {
+			return ErrVerification.
+				WithDetails("Error validating topOrigin").
+				WithInfo("The topOrigin can't have values unless crossOrigin is true.")
+		}
+
+		var possibleTopOrigins []string
+
+		switch rpTopOriginsVerify {
+		case TopOriginExplicitVerificationMode:
+			possibleTopOrigins = rpTopOrigins
+		case TopOriginAutoVerificationMode:
+			possibleTopOrigins = append(rpTopOrigins, rpOrigins...) //nolint:gocritic // This is intentional.
+		case TopOriginImplicitVerificationMode:
+			possibleTopOrigins = rpOrigins
 		default:
-			if !c.CrossOrigin {
-				return ErrVerification.
-					WithDetails("Error validating topOrigin").
-					WithInfo("The topOrigin can't have values unless crossOrigin is true.")
-			}
+			return ErrNotImplemented.WithDetails("Error handling unknown Top Origin verification mode")
+		}
 
-			var possibleTopOrigins []string
-
-			switch rpTopOriginsVerify {
-			case TopOriginExplicitVerificationMode:
-				possibleTopOrigins = rpTopOrigins
-			case TopOriginAutoVerificationMode:
-				possibleTopOrigins = append(rpTopOrigins, rpOrigins...) //nolint:gocritic // This is intentional.
-			case TopOriginImplicitVerificationMode:
-				possibleTopOrigins = rpOrigins
-			default:
-				return ErrNotImplemented.WithDetails("Error handling unknown Top Origin verification mode")
-			}
-
-			if !IsOriginInHaystack(c.TopOrigin, possibleTopOrigins) {
-				return ErrVerification.
-					WithDetails("Error validating top origin").
-					WithInfo(fmt.Sprintf("Expected Values: %s, Received: %s", possibleTopOrigins, c.TopOrigin))
-			}
+		if !IsOriginInHaystack(c.TopOrigin, possibleTopOrigins) {
+			return ErrVerification.
+				WithDetails("Error validating top origin").
+				WithInfo(fmt.Sprintf("Expected Values: %s, Received: %s", possibleTopOrigins, c.TopOrigin))
 		}
 	}
 
@@ -208,9 +212,6 @@ const (
 	// value is intended as a fallback value and implementers should very intentionally pick another option if they want
 	// stability.
 	TopOriginDefaultVerificationMode TopOriginVerificationMode = iota
-
-	// TopOriginIgnoreVerificationMode ignores verification entirely.
-	TopOriginIgnoreVerificationMode
 
 	// TopOriginAutoVerificationMode represents the automatic verification mode for the Top Origin. In this mode the
 	// If the Top Origins parameter has values it checks against this, otherwise it checks against the Origins parameter.

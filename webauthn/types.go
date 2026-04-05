@@ -56,6 +56,10 @@ type Config struct {
 	// becomes recommended, implementers should explicitly set this value if they want stability.
 	RPTopOriginVerificationMode protocol.TopOriginVerificationMode
 
+	// RPAllowCrossOrigin determines whether the RP is allowed to be used in cross-origin contexts. This is disabled
+	// by default.
+	RPAllowCrossOrigin bool
+
 	// AttestationPreference sets the default attestation conveyance preferences.
 	AttestationPreference protocol.ConveyancePreference
 
@@ -139,7 +143,7 @@ func (config *Config) validate() (err error) {
 	}
 
 	if config.RPTopOriginVerificationMode == protocol.TopOriginDefaultVerificationMode {
-		config.RPTopOriginVerificationMode = protocol.TopOriginIgnoreVerificationMode
+		config.RPTopOriginVerificationMode = protocol.TopOriginExplicitVerificationMode
 	}
 
 	config.validated = true
