@@ -1,4 +1,4 @@
-module github.com/go-webauthn/webauthn
+module github.com/kimaah/webauthn
 
 go 1.25.0
 
